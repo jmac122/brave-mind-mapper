@@ -37,3 +37,39 @@ export interface StorageData {
   historyEntries: HistoryEntry[];
   lastUpdated: number;
 }
+
+// D3 Tree Types
+
+/**
+ * D3-compatible tree node structure
+ */
+export interface TreeNode {
+  id: string;
+  name: string;
+  children?: TreeNode[];
+  _children?: TreeNode[]; // Collapsed children (D3 convention)
+  data?: {
+    url?: string;
+    visitCount?: number;
+    lastVisit?: number;
+    category?: Category;
+    isLeaf?: boolean;
+  };
+}
+
+/**
+ * Layout orientation
+ */
+export type TreeOrientation = 'horizontal' | 'vertical';
+
+/**
+ * Tree visualization configuration
+ */
+export interface TreeConfig {
+  orientation: TreeOrientation;
+  nodeWidth: number;
+  nodeHeight: number;
+  duration: number;
+  maxLabelLength: number;
+  depthColors: string[];
+}

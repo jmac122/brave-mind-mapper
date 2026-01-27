@@ -1,24 +1,122 @@
 // Background service worker for Brave Mind Mapper
-// This handles real-time history tracking
+import { HistoryEntry, Category, StorageData } from '../utils/types';
+import { extractDomain, isValidHistoryUrl } from '../utils/domainParser';
 
 console.log('Brave Mind Mapper: Background service worker started');
 
-// Listen for navigation events
-chrome.webNavigation.onCompleted.addListener((details) => {
-  // Only track main frame navigations
-  if (details.frameId === 0) {
+// Message types
+interface GetHistoryMessage {
+  type: 'GET_HISTORY';
+  options?: {
+    startTime?: number;
+    maxResults?: number;
+  };
+}
+
+interface HistoryResponse {
+  success: boolean;
+  data?: HistoryEntry[];
+  error?: string;
+}
+
+/**
+ * Fetches browsing history from Chrome API
+ */
+async function fetchHistory(options?: {
+  startTime?: number;
+  maxResults?: number;
+}): Promise<HistoryEntry[]> {
+  const startTime = options?.startTime ?? 0;
+  const maxResults = options?.maxResults ?? 5000;
+
+  return new Promise((resolve, reject) => {
+    chrome.history.search(
+      {
+        text: '',
+        startTime: startTime,
+        maxResults: maxResults,
+      },
+      results => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+
+        const entries: HistoryEntry[] = results
+          .filter(item => item.url && isValidHistoryUrl(item.url))
+          .map(item => ({
+            id: item.id || crypto.randomUUID(),
+            url: item.url!,
+            title: item.title || item.url!,
+            domain: extractDomain(item.url!),
+            visitTime: item.lastVisitTime || Date.now(),
+            visitCount: item.visitCount || 1,
+            category: 'other' as Category, // Phase 2 will add categorization
+          }));
+
+        resolve(entries);
+      }
+    );
+  });
+}
+
+/**
+ * Saves processed history to storage
+ */
+async function saveToStorage(entries: HistoryEntry[]): Promise<void> {
+  const data: StorageData = {
+    historyEntries: entries,
+    lastUpdated: Date.now(),
+  };
+
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set({ historyData: data }, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+// Listen for navigation events (for real-time updates in Phase 3)
+chrome.webNavigation.onCompleted.addListener(details => {
+  if (details.frameId === 0 && isValidHistoryUrl(details.url)) {
     console.log('Page visited:', details.url);
-    // TODO: Process and store history entry
+    // Phase 3: Incrementally update storage here
   }
 });
 
-// Listen for messages from popup/mindmap
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === 'GET_HISTORY') {
-    // TODO: Return processed history
-    sendResponse({ success: true, data: [] });
+// Message handler for communication with popup/mindmap pages
+chrome.runtime.onMessage.addListener(
+  (
+    message: GetHistoryMessage,
+    _sender,
+    sendResponse: (response: HistoryResponse) => void
+  ) => {
+    if (message.type === 'GET_HISTORY') {
+      // Handle async operation with IIFE
+      (async () => {
+        try {
+          const entries = await fetchHistory(message.options);
+          await saveToStorage(entries);
+          sendResponse({ success: true, data: entries });
+        } catch (error) {
+          console.error('Error fetching history:', error);
+          sendResponse({
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+        }
+      })();
+
+      // CRITICAL: Return true to indicate async response
+      return true;
+    }
+
+    return false;
   }
-  return true; // Keep channel open for async response
-});
+);
 
 export {};
