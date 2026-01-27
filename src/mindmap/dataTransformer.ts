@@ -459,3 +459,35 @@ export function countTreeNodes(root: TreeNode | null): number {
   }
   return count;
 }
+
+// ========== Visit Count Filtering ==========
+
+export type VisitCountRange = 'all' | '1' | '2-5' | '6-10' | '10+';
+
+function isInVisitRange(visitCount: number, range: VisitCountRange): boolean {
+  switch (range) {
+    case 'all':
+      return true;
+    case '1':
+      return visitCount === 1;
+    case '2-5':
+      return visitCount >= 2 && visitCount <= 5;
+    case '6-10':
+      return visitCount >= 6 && visitCount <= 10;
+    case '10+':
+      return visitCount > 10;
+    default:
+      return true;
+  }
+}
+
+/**
+ * Filter history entries by visit count range
+ */
+export function filterEntriesByVisitCount(
+  entries: HistoryEntry[],
+  range: VisitCountRange
+): HistoryEntry[] {
+  if (range === 'all') return entries;
+  return entries.filter(entry => isInVisitRange(entry.visitCount, range));
+}

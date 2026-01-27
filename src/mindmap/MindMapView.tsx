@@ -6,11 +6,14 @@ import {
   computeStats,
   filterTreeBySearch,
   countTreeNodes,
+  filterEntriesByVisitCount,
+  VisitCountRange,
 } from './dataTransformer';
 import D3TreeView, { D3TreeViewRef } from './components/D3TreeView';
 import SearchFilter from './components/SearchFilter';
 import StatsPanel from './components/StatsPanel';
 import ExportMenu from './components/ExportMenu';
+import VisitCountFilter from './components/VisitCountFilter';
 
 type TimeRange = 'today' | 'week' | 'month' | 'all';
 
@@ -56,6 +59,7 @@ const MindMapView: React.FC = () => {
   const [showMinimap, setShowMinimap] = useState(true);
   const [filteredCount, setFilteredCount] = useState(0);
   const [totalCount, setTotalCount] = useState(0);
+  const [visitCountRange, setVisitCountRange] = useState<VisitCountRange>('all');
 
   const treeViewRef = useRef<D3TreeViewRef>(null);
 
@@ -80,33 +84,42 @@ const MindMapView: React.FC = () => {
     });
   }, []);
 
+  // Helper to rebuild tree from entries with current filters
+  const rebuildTree = useCallback(
+    (entries: HistoryEntry[], mode: ViewMode, visitRange: VisitCountRange) => {
+      const filteredByVisits = filterEntriesByVisitCount(entries, visitRange);
+      const data =
+        filteredByVisits.length > 0
+          ? transformToD3TreeByMode(filteredByVisits, mode)
+          : createEmptyD3Tree();
+
+      setTreeData(data);
+      setFilteredData(data);
+      setStats(computeStats(filteredByVisits));
+      setTotalCount(countTreeNodes(data));
+      setFilteredCount(countTreeNodes(data));
+      setSearchQuery('');
+      setEntryCount(filteredByVisits.length);
+    },
+    []
+  );
+
   const loadData = useCallback(
-    async (range: TimeRange, mode: ViewMode = viewMode) => {
+    async (range: TimeRange, mode: ViewMode = viewMode, visitRange: VisitCountRange = visitCountRange) => {
       setLoading(true);
       setError(null);
       try {
         const historyEntries = await fetchHistoryData(range);
         setRawEntries(historyEntries);
-        setEntryCount(historyEntries.length);
 
-        const data =
-          historyEntries.length > 0
-            ? transformToD3TreeByMode(historyEntries, mode)
-            : createEmptyD3Tree();
-
-        setTreeData(data);
-        setFilteredData(data);
-        setStats(computeStats(historyEntries));
-        setTotalCount(countTreeNodes(data));
-        setFilteredCount(countTreeNodes(data));
-        setSearchQuery('');
+        rebuildTree(historyEntries, mode, visitRange);
       } catch (err) {
         console.error('Failed to load mind map:', err);
         setError(err instanceof Error ? err.message : 'Failed to load mind map');
       }
       setLoading(false);
     },
-    [fetchHistoryData, viewMode]
+    [fetchHistoryData, viewMode, visitCountRange, rebuildTree]
   );
 
   useEffect(() => {
@@ -140,14 +153,17 @@ const MindMapView: React.FC = () => {
 
   const handleViewModeChange = (mode: ViewMode) => {
     setViewMode(mode);
-    // Re-transform existing data with new mode
+    // Re-transform existing data with new mode and current visit filter
     if (rawEntries.length > 0) {
-      const data = transformToD3TreeByMode(rawEntries, mode);
-      setTreeData(data);
-      setFilteredData(data);
-      setTotalCount(countTreeNodes(data));
-      setFilteredCount(countTreeNodes(data));
-      setSearchQuery('');
+      rebuildTree(rawEntries, mode, visitCountRange);
+    }
+  };
+
+  const handleVisitCountChange = (range: VisitCountRange) => {
+    setVisitCountRange(range);
+    // Rebuild tree with new visit count filter
+    if (rawEntries.length > 0) {
+      rebuildTree(rawEntries, viewMode, range);
     }
   };
 
@@ -314,6 +330,13 @@ const MindMapView: React.FC = () => {
               📂 Category
             </button>
           </div>
+
+          {/* Visit count filter */}
+          <VisitCountFilter
+            value={visitCountRange}
+            onChange={handleVisitCountChange}
+            disabled={loading}
+          />
 
           {/* Orientation toggle */}
           <button
