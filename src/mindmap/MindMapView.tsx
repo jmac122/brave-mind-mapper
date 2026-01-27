@@ -1,7 +1,16 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { HistoryEntry, TreeNode, TreeOrientation } from '../utils/types';
-import { transformToD3Tree, createEmptyD3Tree } from './dataTransformer';
-import D3TreeView from './components/D3TreeView';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { HistoryEntry, TreeNode, TreeOrientation, ViewMode, StatsData } from '../utils/types';
+import {
+  transformToD3TreeByMode,
+  createEmptyD3Tree,
+  computeStats,
+  filterTreeBySearch,
+  countTreeNodes,
+} from './dataTransformer';
+import D3TreeView, { D3TreeViewRef } from './components/D3TreeView';
+import SearchFilter from './components/SearchFilter';
+import StatsPanel from './components/StatsPanel';
+import ExportMenu from './components/ExportMenu';
 
 type TimeRange = 'today' | 'week' | 'month' | 'all';
 
@@ -35,9 +44,20 @@ const MindMapView: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [treeData, setTreeData] = useState<TreeNode | null>(null);
+  const [filteredData, setFilteredData] = useState<TreeNode | null>(null);
+  const [rawEntries, setRawEntries] = useState<HistoryEntry[]>([]);
   const [entryCount, setEntryCount] = useState(0);
   const [timeRange, setTimeRange] = useState<TimeRange>('today');
   const [orientation, setOrientation] = useState<TreeOrientation>('horizontal');
+  const [viewMode, setViewMode] = useState<ViewMode>('domain');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [stats, setStats] = useState<StatsData | null>(null);
+  const [showStats, setShowStats] = useState(false);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [filteredCount, setFilteredCount] = useState(0);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const treeViewRef = useRef<D3TreeViewRef>(null);
 
   const fetchHistoryData = useCallback(async (range: TimeRange): Promise<HistoryEntry[]> => {
     const startTime = getStartTime(range);
@@ -61,24 +81,32 @@ const MindMapView: React.FC = () => {
   }, []);
 
   const loadData = useCallback(
-    async (range: TimeRange) => {
+    async (range: TimeRange, mode: ViewMode = viewMode) => {
       setLoading(true);
       setError(null);
       try {
         const historyEntries = await fetchHistoryData(range);
+        setRawEntries(historyEntries);
         setEntryCount(historyEntries.length);
 
         const data =
-          historyEntries.length > 0 ? transformToD3Tree(historyEntries) : createEmptyD3Tree();
+          historyEntries.length > 0
+            ? transformToD3TreeByMode(historyEntries, mode)
+            : createEmptyD3Tree();
 
         setTreeData(data);
+        setFilteredData(data);
+        setStats(computeStats(historyEntries));
+        setTotalCount(countTreeNodes(data));
+        setFilteredCount(countTreeNodes(data));
+        setSearchQuery('');
       } catch (err) {
         console.error('Failed to load mind map:', err);
         setError(err instanceof Error ? err.message : 'Failed to load mind map');
       }
       setLoading(false);
     },
-    [fetchHistoryData]
+    [fetchHistoryData, viewMode]
   );
 
   useEffect(() => {
@@ -86,9 +114,41 @@ const MindMapView: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Handle search
+  const handleSearch = useCallback(
+    (query: string) => {
+      setSearchQuery(query);
+      if (!treeData) return;
+
+      if (!query.trim()) {
+        setFilteredData(treeData);
+        setFilteredCount(totalCount);
+        return;
+      }
+
+      const filtered = filterTreeBySearch(treeData, query);
+      setFilteredData(filtered);
+      setFilteredCount(countTreeNodes(filtered));
+    },
+    [treeData, totalCount]
+  );
+
   const handleTimeRangeChange = (range: TimeRange) => {
     setTimeRange(range);
     loadData(range);
+  };
+
+  const handleViewModeChange = (mode: ViewMode) => {
+    setViewMode(mode);
+    // Re-transform existing data with new mode
+    if (rawEntries.length > 0) {
+      const data = transformToD3TreeByMode(rawEntries, mode);
+      setTreeData(data);
+      setFilteredData(data);
+      setTotalCount(countTreeNodes(data));
+      setFilteredCount(countTreeNodes(data));
+      setSearchQuery('');
+    }
   };
 
   const handleOrientationToggle = () => {
@@ -98,6 +158,36 @@ const MindMapView: React.FC = () => {
   const handleRefresh = () => {
     loadData(timeRange);
   };
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.ctrlKey || e.metaKey) {
+        switch (e.key) {
+          case '=':
+          case '+':
+            e.preventDefault();
+            treeViewRef.current?.zoomIn();
+            break;
+          case '-':
+            e.preventDefault();
+            treeViewRef.current?.zoomOut();
+            break;
+          case '0':
+            e.preventDefault();
+            treeViewRef.current?.resetZoom();
+            break;
+          case '1':
+            e.preventDefault();
+            treeViewRef.current?.fitToView();
+            break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   return (
     <div
@@ -123,24 +213,35 @@ const MindMapView: React.FC = () => {
           gap: '12px',
         }}
       >
-        <div>
-          <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 600 }}>
-            Browsing History Mind Map
-          </h1>
-          {entryCount > 0 && (
-            <p
-              style={{
-                margin: '4px 0 0 0',
-                fontSize: '12px',
-                color: '#6b7280',
-              }}
-            >
-              {entryCount} pages loaded
-            </p>
-          )}
+        {/* Left side: Title and search */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <div>
+            <h1 style={{ margin: 0, fontSize: '18px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              🧠 Mind Mapper
+            </h1>
+            {entryCount > 0 && (
+              <p
+                style={{
+                  margin: '4px 0 0 0',
+                  fontSize: '12px',
+                  color: '#6b7280',
+                }}
+              >
+                {entryCount} pages loaded
+              </p>
+            )}
+          </div>
+
+          {/* Search */}
+          <SearchFilter
+            onSearch={handleSearch}
+            resultCount={searchQuery ? filteredCount : undefined}
+            totalCount={searchQuery ? totalCount : undefined}
+          />
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+        {/* Right side: Controls */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {/* Time range buttons */}
           <div
             style={{
@@ -172,6 +273,48 @@ const MindMapView: React.FC = () => {
             ))}
           </div>
 
+          {/* View mode toggle */}
+          <div
+            style={{
+              display: 'flex',
+              borderRadius: '6px',
+              overflow: 'hidden',
+              border: '1px solid #e5e7eb',
+            }}
+          >
+            <button
+              onClick={() => handleViewModeChange('domain')}
+              disabled={loading}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: viewMode === 'domain' ? '#7C3AED' : 'white',
+                color: viewMode === 'domain' ? 'white' : '#374151',
+                border: 'none',
+                borderRight: '1px solid #e5e7eb',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: viewMode === 'domain' ? 500 : 400,
+              }}
+            >
+              🌐 Domain
+            </button>
+            <button
+              onClick={() => handleViewModeChange('category')}
+              disabled={loading}
+              style={{
+                padding: '6px 12px',
+                backgroundColor: viewMode === 'category' ? '#7C3AED' : 'white',
+                color: viewMode === 'category' ? 'white' : '#374151',
+                border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+                fontWeight: viewMode === 'category' ? 500 : 400,
+              }}
+            >
+              📂 Category
+            </button>
+          </div>
+
           {/* Orientation toggle */}
           <button
             onClick={handleOrientationToggle}
@@ -191,6 +334,48 @@ const MindMapView: React.FC = () => {
             {orientation === 'horizontal' ? '↓ Vertical' : '→ Horizontal'}
           </button>
 
+          {/* Minimap toggle */}
+          <button
+            onClick={() => setShowMinimap(!showMinimap)}
+            title={showMinimap ? 'Hide Minimap' : 'Show Minimap'}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: showMinimap ? '#0891b2' : '#e5e7eb',
+              color: showMinimap ? 'white' : '#374151',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 500,
+            }}
+          >
+            🗺️
+          </button>
+
+          {/* Stats button */}
+          <button
+            onClick={() => setShowStats(true)}
+            style={{
+              padding: '6px 12px',
+              backgroundColor: '#f59e0b',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontSize: '13px',
+              fontWeight: 500,
+            }}
+          >
+            📊 Stats
+          </button>
+
+          {/* Export menu */}
+          <ExportMenu
+            svgElement={treeViewRef.current?.svgElement || null}
+            gElement={treeViewRef.current?.gElement || null}
+            filename={`browsing-history-${timeRange}`}
+          />
+
           {/* Refresh button */}
           <button
             onClick={handleRefresh}
@@ -206,7 +391,7 @@ const MindMapView: React.FC = () => {
               fontWeight: 500,
             }}
           >
-            {loading ? 'Loading...' : 'Refresh'}
+            {loading ? '⏳ Loading...' : '🔄 Refresh'}
           </button>
         </div>
       </div>
@@ -219,9 +404,12 @@ const MindMapView: React.FC = () => {
             backgroundColor: '#fef2f2',
             color: '#dc2626',
             borderBottom: '1px solid #fecaca',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
           }}
         >
-          Error: {error}
+          ⚠️ Error: {error}
         </div>
       )}
 
@@ -242,22 +430,49 @@ const MindMapView: React.FC = () => {
             <div style={{ textAlign: 'center' }}>
               <div
                 style={{
-                  fontSize: '24px',
-                  marginBottom: '8px',
-                  color: '#4F46E5',
+                  fontSize: '32px',
+                  marginBottom: '12px',
+                  animation: 'pulse 1.5s ease-in-out infinite',
                 }}
               >
-                Loading...
+                🧠
               </div>
-              <div style={{ color: '#6b7280' }}>Fetching browsing history</div>
+              <div style={{ color: '#4F46E5', fontWeight: 500 }}>Loading browsing history...</div>
             </div>
           </div>
         )}
 
-        {treeData && <D3TreeView data={treeData} orientation={orientation} />}
+        {filteredData && (
+          <D3TreeView
+            ref={treeViewRef}
+            data={filteredData}
+            orientation={orientation}
+            showMinimap={showMinimap}
+          />
+        )}
+
+        {/* No results message */}
+        {searchQuery && filteredCount === 0 && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              textAlign: 'center',
+              color: '#6b7280',
+            }}
+          >
+            <div style={{ fontSize: '48px', marginBottom: '12px' }}>🔍</div>
+            <div style={{ fontSize: '16px', fontWeight: 500 }}>No results found</div>
+            <div style={{ fontSize: '13px', marginTop: '4px' }}>
+              Try a different search term
+            </div>
+          </div>
+        )}
       </div>
 
-      {/* Instructions footer */}
+      {/* Footer */}
       <div
         style={{
           padding: '8px 16px',
@@ -265,12 +480,43 @@ const MindMapView: React.FC = () => {
           backgroundColor: 'white',
           fontSize: '12px',
           color: '#6b7280',
-          textAlign: 'center',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
         }}
       >
-        Scroll to zoom | Drag to pan | Click nodes to expand/collapse | Click underlined links to
-        open pages
+        <span>
+          Scroll to zoom • Drag to pan • Click nodes to expand/collapse • Click links to open pages
+        </span>
+        <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span
+            style={{
+              display: 'inline-block',
+              width: '8px',
+              height: '8px',
+              borderRadius: '50%',
+              backgroundColor: '#fbbf24',
+              boxShadow: '0 0 4px rgba(251, 191, 36, 0.6)',
+            }}
+          />
+          Recently visited (last hour)
+        </span>
       </div>
+
+      {/* Stats Panel */}
+      <StatsPanel
+        stats={stats}
+        isOpen={showStats}
+        onClose={() => setShowStats(false)}
+      />
+
+      {/* Inline styles for animations */}
+      <style>{`
+        @keyframes pulse {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.1); opacity: 0.8; }
+        }
+      `}</style>
     </div>
   );
 };

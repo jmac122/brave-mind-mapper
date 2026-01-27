@@ -72,4 +72,24 @@ export interface TreeConfig {
   duration: number;
   maxLabelLength: number;
   depthColors: string[];
+  showMinimap: boolean;
+  highlightRecent: boolean;
+  recentThresholdMs: number;
+}
+
+/**
+ * View mode - by domain or by category
+ */
+export type ViewMode = 'domain' | 'category';
+
+/**
+ * Stats data computed from history entries
+ */
+export interface StatsData {
+  totalPages: number;
+  totalDomains: number;
+  totalVisits: number;
+  categoryCounts: Record<Category, number>;
+  topDomains: Array<{ domain: string; count: number; visits: number }>;
+  recentActivity: Array<{ title: string; url: string; time: number }>;
 }

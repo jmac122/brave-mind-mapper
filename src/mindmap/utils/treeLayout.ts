@@ -8,6 +8,9 @@ export const DEFAULT_CONFIG: TreeConfig = {
   duration: 400,
   maxLabelLength: 45,
   depthColors: ['#4F46E5', '#7C3AED', '#DB2777', '#EA580C', '#16A34A', '#0891B2'],
+  showMinimap: true,
+  highlightRecent: true,
+  recentThresholdMs: 3600000, // 1 hour
 };
 
 export type D3HierarchyNode = d3.HierarchyPointNode<TreeNode>;

@@ -10,11 +10,25 @@ import {
   truncateLabel,
 } from '../utils/treeLayout';
 
+interface TooltipData {
+  x: number;
+  y: number;
+  title: string;
+  url?: string;
+  visitCount?: number;
+  lastVisit?: number;
+  pageCount?: number;
+  category?: string;
+}
+
 interface UseD3TreeOptions {
   data: TreeNode | null;
   config: TreeConfig;
   onNodeClick?: (node: TreeNode) => void;
   onLinkClick?: (url: string) => void;
+  onTooltipShow?: (data: TooltipData) => void;
+  onTooltipHide?: () => void;
+  highlightNodeId?: string | null;
 }
 
 interface UseD3TreeReturn {
@@ -27,7 +41,7 @@ interface UseD3TreeReturn {
 }
 
 export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
-  const { data, config, onNodeClick, onLinkClick } = options;
+  const { data, config, onNodeClick, onLinkClick, onTooltipShow, onTooltipHide, highlightNodeId } = options;
 
   const svgRef = useRef<SVGSVGElement>(null);
   const gRef = useRef<SVGGElement>(null);
@@ -77,6 +91,23 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         ? getNodePosition(sourceNode, config)
         : getNodePosition(root, config);
 
+      // ========== GRADIENT DEFINITIONS ==========
+      let defs = g.select<SVGDefsElement>('defs');
+      if (defs.empty()) {
+        defs = g.append('defs');
+      }
+
+      // Create gradient for links
+      const gradientId = 'linkGradient';
+      let gradient = defs.select<SVGLinearGradientElement>(`#${gradientId}`);
+      if (gradient.empty()) {
+        gradient = defs.append('linearGradient')
+          .attr('id', gradientId)
+          .attr('gradientUnits', 'userSpaceOnUse');
+        gradient.append('stop').attr('offset', '0%').attr('stop-color', '#4F46E5').attr('stop-opacity', 0.6);
+        gradient.append('stop').attr('offset', '100%').attr('stop-color', '#7C3AED').attr('stop-opacity', 0.3);
+      }
+
       // ========== LINKS ==========
       const linkSelection = g
         .selectAll<SVGPathElement, d3.HierarchyLink<TreeNode>>('path.link')
@@ -88,8 +119,10 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         .append('path')
         .attr('class', 'link')
         .attr('fill', 'none')
-        .attr('stroke', '#94a3b8')
-        .attr('stroke-width', 1.5)
+        .attr('stroke', `url(#${gradientId})`)
+        .attr('stroke-width', 2)
+        .attr('stroke-linecap', 'round')
+        .attr('opacity', 0)
         .attr('d', () => {
           const o = { x: sourcePos.x, y: sourcePos.y };
           return getLinkPath(o, o, config);
@@ -100,6 +133,7 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         .merge(linkEnter)
         .transition()
         .duration(config.duration)
+        .attr('opacity', 0.8)
         .attr('d', d => {
           const source = getNodePosition(d.source as D3HierarchyNode, config);
           const target = getNodePosition(d.target as D3HierarchyNode, config);
@@ -111,6 +145,7 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         .exit()
         .transition()
         .duration(config.duration)
+        .attr('opacity', 0)
         .attr('d', () => {
           const o = { x: sourcePos.x, y: sourcePos.y };
           return getLinkPath(o, o, config);
@@ -121,6 +156,23 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
       const nodeSelection = g
         .selectAll<SVGGElement, D3HierarchyNode>('g.node')
         .data(nodes, d => d.data.id);
+
+      // Helper to calculate node size based on visit count
+      const getNodeSize = (d: D3HierarchyNode): number => {
+        const visitCount = d.data.data?.visitCount || 1;
+        const hasChildren = d.data.children || d.data._children;
+        const baseSize = hasChildren ? 10 : 6;
+        const visitBonus = Math.min(Math.log10(visitCount + 1) * 2, 6);
+        return baseSize + visitBonus;
+      };
+
+      // Check if a node was recently visited
+      const isRecentNode = (d: D3HierarchyNode): boolean => {
+        if (!config.highlightRecent) return false;
+        const lastVisit = d.data.data?.lastVisit;
+        if (!lastVisit) return false;
+        return Date.now() - lastVisit < config.recentThresholdMs;
+      };
 
       // Enter
       const nodeEnter = nodeSelection
@@ -137,15 +189,59 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
           } else {
             onNodeClick?.(d.data);
           }
+        })
+        .on('mouseenter', (event, d) => {
+          if (onTooltipShow) {
+            const childCount = (d.data.children?.length || 0) + (d.data._children?.length || 0);
+            onTooltipShow({
+              x: event.clientX,
+              y: event.clientY,
+              title: d.data.name,
+              url: d.data.data?.url,
+              visitCount: d.data.data?.visitCount,
+              lastVisit: d.data.data?.lastVisit,
+              pageCount: childCount > 0 ? childCount : undefined,
+              category: d.data.data?.category,
+            });
+          }
+        })
+        .on('mousemove', (event, d) => {
+          if (onTooltipShow) {
+            const childCount = (d.data.children?.length || 0) + (d.data._children?.length || 0);
+            onTooltipShow({
+              x: event.clientX,
+              y: event.clientY,
+              title: d.data.name,
+              url: d.data.data?.url,
+              visitCount: d.data.data?.visitCount,
+              lastVisit: d.data.data?.lastVisit,
+              pageCount: childCount > 0 ? childCount : undefined,
+              category: d.data.data?.category,
+            });
+          }
+        })
+        .on('mouseleave', () => {
+          onTooltipHide?.();
         });
 
-      // Circle
+      // Circle with shadow for depth
       nodeEnter
         .append('circle')
-        .attr('r', 6)
+        .attr('class', 'node-shadow')
+        .attr('r', d => getNodeSize(d) + 2)
+        .attr('fill', 'rgba(0, 0, 0, 0.1)')
+        .attr('cx', 1)
+        .attr('cy', 1);
+
+      nodeEnter
+        .append('circle')
+        .attr('class', 'node-circle')
+        .attr('r', d => getNodeSize(d))
         .attr('fill', d => getNodeColor(d.depth, config))
-        .attr('stroke', '#fff')
-        .attr('stroke-width', 2);
+        .attr('stroke', d => isRecentNode(d) ? '#fbbf24' : '#fff')
+        .attr('stroke-width', d => isRecentNode(d) ? 3 : 2)
+        .style('filter', d => isRecentNode(d) ? 'drop-shadow(0 0 4px rgba(251, 191, 36, 0.6))' : 'none')
+        .style('transition', 'all 0.2s');
 
       // Collapse indicator
       nodeEnter
@@ -158,13 +254,14 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         .attr('fill', '#fff')
         .attr('pointer-events', 'none');
 
-      // Label
+      // Label with better styling
       nodeEnter
         .append('text')
         .attr('class', 'label')
         .attr('dy', '0.35em')
         .attr('font-size', '11px')
-        .attr('fill', '#1f2937');
+        .attr('fill', '#1f2937')
+        .style('font-family', '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif');
 
       // Update
       const nodeUpdate = nodeSelection.merge(nodeEnter);
@@ -178,11 +275,33 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         })
         .attr('opacity', 1);
 
-      // Update circle
+      // Update circle shadow
       nodeUpdate
-        .select('circle')
-        .attr('r', d => (d.data._children || d.data.children ? 8 : 5))
-        .attr('fill', d => getNodeColor(d.depth, config));
+        .select('.node-shadow')
+        .attr('r', d => getNodeSize(d) + 2);
+
+      // Update main circle
+      nodeUpdate
+        .select('.node-circle')
+        .attr('r', d => getNodeSize(d))
+        .attr('fill', d => {
+          if (highlightNodeId && d.data.id === highlightNodeId) {
+            return '#fbbf24';
+          }
+          return getNodeColor(d.depth, config);
+        })
+        .attr('stroke', d => {
+          if (highlightNodeId && d.data.id === highlightNodeId) {
+            return '#f59e0b';
+          }
+          return isRecentNode(d) ? '#fbbf24' : '#fff';
+        })
+        .attr('stroke-width', d => {
+          if (highlightNodeId && d.data.id === highlightNodeId) {
+            return 4;
+          }
+          return isRecentNode(d) ? 3 : 2;
+        });
 
       // Update collapse indicator
       nodeUpdate.select('.collapse-indicator').text(d => {
@@ -225,7 +344,7 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         .attr('opacity', 0)
         .remove();
     },
-    [config, onNodeClick, onLinkClick]
+    [config, onNodeClick, onLinkClick, onTooltipShow, onTooltipHide, highlightNodeId]
   );
 
   // Handle data/config changes
