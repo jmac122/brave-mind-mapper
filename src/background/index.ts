@@ -21,23 +21,6 @@ interface HistoryResponse {
 }
 
 /**
- * Gets visit count for a URL within a specific time range
- */
-async function getVisitCountInRange(url: string, startTime: number): Promise<number> {
-  return new Promise((resolve) => {
-    chrome.history.getVisits({ url }, (visits) => {
-      if (chrome.runtime.lastError || !visits) {
-        resolve(1);
-        return;
-      }
-      // Count only visits within the time range
-      const count = visits.filter(v => v.visitTime && v.visitTime >= startTime).length;
-      resolve(Math.max(count, 1));
-    });
-  });
-}
-
-/**
  * Fetches browsing history from Chrome API
  */
 async function fetchHistory(options?: {
@@ -54,30 +37,23 @@ async function fetchHistory(options?: {
         startTime: startTime,
         maxResults: maxResults,
       },
-      async (results) => {
+      results => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));
           return;
         }
 
-        const filteredResults = results.filter(item => item.url && isValidHistoryUrl(item.url));
-
-        // Get accurate visit counts within the time range
-        // Process in batches to avoid overwhelming the API
-        const entries: HistoryEntry[] = [];
-
-        for (const item of filteredResults) {
-          const visitCount = await getVisitCountInRange(item.url!, startTime);
-          entries.push({
+        const entries: HistoryEntry[] = results
+          .filter(item => item.url && isValidHistoryUrl(item.url))
+          .map(item => ({
             id: item.id || crypto.randomUUID(),
             url: item.url!,
             title: item.title || item.url!,
             domain: extractDomain(item.url!),
             visitTime: item.lastVisitTime || Date.now(),
-            visitCount,
+            visitCount: item.visitCount || 1,
             category: categorize(item.url!, item.title || ''),
-          });
-        }
+          }));
 
         resolve(entries);
       }
