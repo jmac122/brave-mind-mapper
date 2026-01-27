@@ -491,3 +491,78 @@ export function filterEntriesByVisitCount(
   if (range === 'all') return entries;
   return entries.filter(entry => isInVisitRange(entry.visitCount, range));
 }
+
+// ========== Auto-Collapse for Large Trees ==========
+
+/**
+ * Auto-collapse large trees to show only top N children by visit count.
+ * This prevents overlap when there are many domains.
+ */
+export function autoCollapseLargeTree(
+  root: TreeNode,
+  maxExpanded: number = 25
+): TreeNode {
+  if (!root.children || root.children.length <= maxExpanded) {
+    return root;
+  }
+
+  // Sort children by visit count (most visited first)
+  const sorted = [...root.children].sort((a, b) =>
+    (b.data?.visitCount || 0) - (a.data?.visitCount || 0)
+  );
+
+  const collapsedCount = sorted.length - maxExpanded;
+
+  return {
+    ...root,
+    name: root.name.replace(/ \(\+\d+ collapsed\)$/, '') + ` (+${collapsedCount} collapsed)`,
+    children: sorted.slice(0, maxExpanded),      // Top N expanded
+    _children: sorted.slice(maxExpanded),        // Rest collapsed
+  };
+}
+
+/**
+ * Expand all collapsed nodes in the tree
+ */
+export function expandAllNodes(root: TreeNode): TreeNode {
+  const expanded: TreeNode = { ...root };
+
+  // Merge _children into children
+  if (expanded._children) {
+    expanded.children = [...(expanded.children || []), ...expanded._children];
+    expanded._children = undefined;
+    // Remove the "+N collapsed" suffix from name
+    expanded.name = expanded.name.replace(/ \(\+\d+ collapsed\)$/, '');
+  }
+
+  // Recursively expand all children
+  if (expanded.children) {
+    expanded.children = expanded.children.map(child => expandAllNodes(child));
+  }
+
+  return expanded;
+}
+
+/**
+ * Collapse all nodes except root (keeps root children visible but collapses their children)
+ */
+export function collapseAllNodes(root: TreeNode): TreeNode {
+  const collapsed: TreeNode = { ...root };
+
+  // Recursively collapse children first
+  if (collapsed.children) {
+    collapsed.children = collapsed.children.map(child => {
+      // Each child: move its children to _children
+      if (child.children && child.children.length > 0) {
+        return {
+          ...child,
+          _children: child.children,
+          children: undefined,
+        };
+      }
+      return child;
+    });
+  }
+
+  return collapsed;
+}

@@ -28,7 +28,20 @@ export function createTreeLayout(
   if (config.orientation === 'horizontal') {
     // Horizontal: more vertical space between siblings, generous horizontal spacing
     layout.size([height - 60, width - config.nodeWidth - 150]);
-    layout.separation((a, b) => (a.parent === b.parent ? 1.5 : 2));
+    // Dynamic separation based on sibling count to prevent overlap
+    layout.separation((a, b) => {
+      const siblingCount = a.parent?.children?.length || 1;
+      // More siblings = more vertical space needed per node
+      let baseSep: number;
+      if (siblingCount > 50) {
+        baseSep = 2.5;
+      } else if (siblingCount > 20) {
+        baseSep = 2.0;
+      } else {
+        baseSep = 1.5;
+      }
+      return a.parent === b.parent ? baseSep : 2.5;
+    });
   } else {
     // Vertical: MUCH more horizontal space to prevent label overlap
     // Use nodeSize instead of size for better control

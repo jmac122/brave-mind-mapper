@@ -8,6 +8,9 @@ import {
   countTreeNodes,
   filterEntriesByVisitCount,
   VisitCountRange,
+  autoCollapseLargeTree,
+  expandAllNodes,
+  collapseAllNodes,
 } from './dataTransformer';
 import D3TreeView, { D3TreeViewRef } from './components/D3TreeView';
 import SearchFilter from './components/SearchFilter';
@@ -88,10 +91,13 @@ const MindMapView: React.FC = () => {
   const rebuildTree = useCallback(
     (entries: HistoryEntry[], mode: ViewMode, visitRange: VisitCountRange) => {
       const filteredByVisits = filterEntriesByVisitCount(entries, visitRange);
-      const data =
+      let data =
         filteredByVisits.length > 0
           ? transformToD3TreeByMode(filteredByVisits, mode)
           : createEmptyD3Tree();
+
+      // Auto-collapse if too many domains (>25)
+      data = autoCollapseLargeTree(data, 25);
 
       setTreeData(data);
       setFilteredData(data);
@@ -169,6 +175,24 @@ const MindMapView: React.FC = () => {
 
   const handleOrientationToggle = () => {
     setOrientation(prev => (prev === 'horizontal' ? 'vertical' : 'horizontal'));
+  };
+
+  const handleExpandAll = () => {
+    if (!treeData) return;
+    const expanded = expandAllNodes(treeData);
+    setTreeData(expanded);
+    setFilteredData(expanded);
+    setTotalCount(countTreeNodes(expanded));
+    setFilteredCount(countTreeNodes(expanded));
+  };
+
+  const handleCollapseAll = () => {
+    if (!treeData) return;
+    const collapsed = collapseAllNodes(treeData);
+    setTreeData(collapsed);
+    setFilteredData(collapsed);
+    setTotalCount(countTreeNodes(collapsed));
+    setFilteredCount(countTreeNodes(collapsed));
   };
 
   const handleRefresh = () => {
@@ -337,6 +361,48 @@ const MindMapView: React.FC = () => {
             onChange={handleVisitCountChange}
             disabled={loading}
           />
+
+          {/* Expand/Collapse All buttons */}
+          <div
+            style={{
+              display: 'flex',
+              borderRadius: '6px',
+              overflow: 'hidden',
+              border: '1px solid #e5e7eb',
+            }}
+          >
+            <button
+              onClick={handleExpandAll}
+              disabled={loading}
+              title="Expand all domains"
+              style={{
+                padding: '6px 10px',
+                backgroundColor: 'white',
+                color: '#374151',
+                border: 'none',
+                borderRight: '1px solid #e5e7eb',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              ⊞ Expand
+            </button>
+            <button
+              onClick={handleCollapseAll}
+              disabled={loading}
+              title="Collapse all domains"
+              style={{
+                padding: '6px 10px',
+                backgroundColor: 'white',
+                color: '#374151',
+                border: 'none',
+                cursor: loading ? 'not-allowed' : 'pointer',
+                fontSize: '13px',
+              }}
+            >
+              ⊟ Collapse
+            </button>
+          </div>
 
           {/* Orientation toggle */}
           <button
