@@ -158,11 +158,12 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         .data(nodes, d => d.data.id);
 
       // Helper to calculate node size based on visit count
+      // Smaller sizes overall to prevent overlap
       const getNodeSize = (d: D3HierarchyNode): number => {
         const visitCount = d.data.data?.visitCount || 1;
         const hasChildren = d.data.children || d.data._children;
-        const baseSize = hasChildren ? 10 : 6;
-        const visitBonus = Math.min(Math.log10(visitCount + 1) * 2, 6);
+        const baseSize = hasChildren ? 7 : 4;
+        const visitBonus = Math.min(Math.log10(visitCount + 1) * 1.5, 4);
         return baseSize + visitBonus;
       };
 
@@ -310,18 +311,22 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
         return '';
       });
 
-      // Update label position
+      // Update label position - increased buffer to prevent overlap
       nodeUpdate
         .select('.label')
         .attr('x', d => {
           if (config.orientation === 'horizontal') {
-            return d.data.children || d.data._children ? -12 : 12;
+            // More buffer between circle and label
+            const nodeSize = getNodeSize(d);
+            return d.data.children || d.data._children ? -(nodeSize + 8) : (nodeSize + 8);
           }
           return 0;
         })
         .attr('y', d => {
           if (config.orientation === 'vertical') {
-            return d.data.children || d.data._children ? -18 : 18;
+            // More vertical space for labels
+            const nodeSize = getNodeSize(d);
+            return d.data.children || d.data._children ? -(nodeSize + 8) : (nodeSize + 10);
           }
           return 0;
         })
@@ -331,9 +336,14 @@ export function useD3Tree(options: UseD3TreeOptions): UseD3TreeReturn {
           }
           return 'middle';
         })
-        .text(d => truncateLabel(d.data.name, config.maxLabelLength))
+        .text(d => {
+          // Shorter labels in vertical mode to prevent horizontal overlap
+          const maxLen = config.orientation === 'vertical' ? 25 : config.maxLabelLength;
+          return truncateLabel(d.data.name, maxLen);
+        })
         .style('text-decoration', d => (d.data.data?.isLeaf ? 'underline' : 'none'))
-        .style('fill', d => (d.data.data?.isLeaf ? '#4F46E5' : '#1f2937'));
+        .style('fill', d => (d.data.data?.isLeaf ? '#4F46E5' : '#1f2937'))
+        .style('font-size', config.orientation === 'vertical' ? '10px' : '11px');
 
       // Exit
       nodeSelection

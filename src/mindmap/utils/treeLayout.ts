@@ -26,12 +26,15 @@ export function createTreeLayout(
   const layout = d3.tree<TreeNode>();
 
   if (config.orientation === 'horizontal') {
-    layout.size([height - 60, width - config.nodeWidth - 100]);
+    // Horizontal: more vertical space between siblings, generous horizontal spacing
+    layout.size([height - 60, width - config.nodeWidth - 150]);
+    layout.separation((a, b) => (a.parent === b.parent ? 1.5 : 2));
   } else {
-    layout.size([width - 100, height - config.nodeHeight - 100]);
+    // Vertical: MUCH more horizontal space to prevent label overlap
+    // Use nodeSize instead of size for better control
+    layout.nodeSize([180, 80]); // [horizontal spacing, vertical spacing]
+    layout.separation((a, b) => (a.parent === b.parent ? 1.2 : 1.5));
   }
-
-  layout.separation((a, b) => (a.parent === b.parent ? 1 : 1.2));
 
   return layout;
 }

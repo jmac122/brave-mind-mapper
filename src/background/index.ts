@@ -1,6 +1,7 @@
 // Background service worker for Brave Mind Mapper
-import { HistoryEntry, Category, StorageData } from '../utils/types';
+import { HistoryEntry, StorageData } from '../utils/types';
 import { extractDomain, isValidHistoryUrl } from '../utils/domainParser';
+import { categorize } from '../utils/categorizer';
 
 console.log('Brave Mind Mapper: Background service worker started');
 
@@ -51,7 +52,7 @@ async function fetchHistory(options?: {
             domain: extractDomain(item.url!),
             visitTime: item.lastVisitTime || Date.now(),
             visitCount: item.visitCount || 1,
-            category: 'other' as Category, // Phase 2 will add categorization
+            category: categorize(item.url!, item.title || ''),
           }));
 
         resolve(entries);
