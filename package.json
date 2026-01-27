@@ -1,0 +1,37 @@
+{
+  "name": "brave-mind-mapper",
+  "version": "0.1.0",
+  "description": "Brave browser extension to create mind maps from browsing history",
+  "private": true,
+  "scripts": {
+    "dev": "webpack --mode development --watch",
+    "build": "webpack --mode production",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "markmap-view": "^0.17.0",
+    "markmap-lib": "^0.17.0",
+    "d3": "^7.8.5"
+  },
+  "devDependencies": {
+    "@types/chrome": "^0.0.260",
+    "@types/react": "^18.2.48",
+    "@types/react-dom": "^18.2.18",
+    "@types/d3": "^7.4.3",
+    "typescript": "^5.3.3",
+    "webpack": "^5.90.0",
+    "webpack-cli": "^5.1.4",
+    "ts-loader": "^9.5.1",
+    "copy-webpack-plugin": "^12.0.2",
+    "html-webpack-plugin": "^5.6.0",
+    "css-loader": "^6.9.1",
+    "style-loader": "^3.3.4",
+    "tailwindcss": "^3.4.1",
+    "postcss": "^8.4.33",
+    "postcss-loader": "^8.0.0",
+    "autoprefixer": "^10.4.17",
+    "rimraf": "^5.0.5"
+  }
+}
