@@ -310,3 +310,21 @@ When you start working on this project:
 8. `src/utils/categorizer.ts` - Topic detection
 
 Good luck! This is a well-scoped project that should result in a genuinely useful browser extension.
+
+---
+
+## Agent attribution — MANDATORY (applies repo-wide)
+
+**NO AGENT ATTRIBUTION IN ANY COMMIT, PR, OR SUMMARY, EVER.** Do not include
+"Co-Authored-By: Claude", "Generated with Claude Code", "🤖 Generated with…",
+"Made with Opus/Sonnet/Haiku", "Anthropic", "AI-assisted", or any equivalent
+attribution trailer, footer, sign-off, or inline mention in:
+
+- commit messages (subject, body, or trailers),
+- PR titles, descriptions, or comments,
+- changelog / HANDOFF / status / session-report entries,
+- tag messages, release notes, or any other artifact under version control.
+
+Write commits and summaries as if a human authored them. If a tool, template,
+or default behavior tries to append attribution, strip it before committing.
+No exceptions.
